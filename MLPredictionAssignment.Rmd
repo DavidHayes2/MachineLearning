@@ -1,0 +1,203 @@
+---
+title: "Practical Machine Learning - Prediction"
+output: html_document
+---
+# Practical Machine Learning - Prediction
+
+## Executive Summary
+
+The goal of this project was to predict *how well* individuals did certain exerise activities using machine data collected from such devices as Jawbone Up, Nike FuelBand, and Fitbit (normally individuals *quantify how much* of a particular activity they do, but they rarely quantify how well they do it).
+
+A Machine Learning Prediction model was build using Random Forest algorithm. When testing the model against the Training (60%) data set used to build the model the **In Sample** accuracy is 100%, with no false-positives or false-negatives. Next we tested our model with the testing data set (40%) which calculates the **Out of Sample** accuracy to be 99.5%. Finally we took the 20 test observation cases and each of these were classified successfully.
+
+##  Background / Context
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions (accelerometers were on the belt, forearm, arm, and dumbell). The outcome of each were captured in the Training Data Set under the *Classe* variable : 
+
+Class **A** - exactly according to the specification.
+
+Class **B** - throwing the elbows to the front.
+
+Class **C** - lifting the dumbbell only halfway.
+
+Class **D** - lowering the dumbbell only halfway.
+
+Class **E** - and throwing the hips to the front.
+
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes.
+
+More information: <http://groupware.les.inf.puc-rio.br/har>
+
+## Approach Taken
+The following key steps were undertaken to construct the model:
+
+1. The Data Sets (Training and Test) were loaded
+2. Exploratory Data Analysis undertaken to understand both data sets
+3. Cleansing activity on the data sets to remove NA and invalid Data (#DIV/0!)
+4. Removal of Predictors which had little value to the model
+5. Data Partitioning of data into a Training and Test Set (60%/40%)
+6. Training of data using Random Forest algorithm within the *Caret* Package
+7. Prediction of data:
+
+    7a. against Training data; 
+    7b. against Test data; 
+    7c. against 20 observations Test Set
+8. Writing of prediction answers from Step 7c to files and submission.
+
+## Initialisation
+First we ensure that the **Caret** package is available.
+```{r}
+install.packages("caret"); library(caret)
+```
+
+## File Processing
+The training data for this project are available here: 
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here: 
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+I saved these files to my local file system prior to loading.
+```{r}
+setwd("c:/DataScience/MachineLearning")
+
+# Read in Training Set
+DF.train <- read.csv("pml-training.csv", header=TRUE, na.strings=c("NA",""," ","#DIV/0!"))
+
+# Read in Testing Set
+DF.test<-read.csv("pml-testing.csv", header=TRUE, na.strings=c("NA",""," ","#DIV/0!"))
+```
+
+
+## Exploratory Data Analysis
+
+Both the Training and Test Data sets contain 160 Columns.
+The Training Set has 19622 Observations and the Test set has 20.
+
+A Structure of the Training Data set can be found in the Appendix at the end of this report.
+
+Initial analysis identified there were a lot of columns containing **NA**.
+The 1st 6 columns of the Training Data set did not appear to be accelerometer measures.
+Caution should be taken with the  **user_name** predictor variable given different individuals may have the same user_name. In the data analysed the user_name appears to be an individual's forename. 
+```{r}
+nrow(DF.train) 
+ncol(DF.train) 
+
+nrow(DF.test)
+ncol(DF.test) 
+```
+
+
+It is useful to understand the relative spread of the *Classe* variable across the Training Data Set.
+```{r}
+summary(DF.train$classe)
+plot(DF.train$classe)
+title(main = "Values for Classe Attribute on Training Data")
+```
+
+## Data Cleansing
+
+We start by reducing the number of features/predictors (from the initial 160 at the start)
+from both Train and Test Data Sets to remove Columns containing **NA***.
+Also remove the 1st 6 columns 
+```{r}
+# reduce number of columns to 60 (removing any Columns with NA)
+DF2.train <- DF.train[ , ! apply( DF.train , 2 , function(x) any(is.na(x)) ) ]
+
+DF2.test <- DF.test[ , ! apply( DF.test , 2 , function(x) any(is.na(x)) ) ]
+
+# remove 1st 6 columns
+DF2.train <- DF2.train[,c(-1:-6)]
+DF2.test <- DF2.test[,c(-1:-6)]
+```
+
+## Data Slicing / Partitioning
+
+Now we will partition the Training Data Set into Training (60%) and Test (40%).
+```{r}
+inTrain <- createDataPartition(y=DF2.train$classe,
+                               p=0.60, list=FALSE)
+training <- DF2.train[inTrain,]
+testing <- DF2.train[-inTrain,]
+
+dim(training)
+```
+
+
+## Training
+
+Next we train the data using the **train** function within the **caret** package; alternatively we could have called the **randomForest** function directly within the RandomForest Package.
+
+For the purposes of this I have specified **5-fold cross validation** and restricted the number of trees to 50. For reproducibility purposes I have also added a *seed*.
+```{r}
+set.seed(54321)
+modelFit.rf <- train(classe ~.,data=training, method="rf", ntree=50, prox=TRUE,
+trControl = trainControl(method="cv", number=5))
+
+modelFit.rf
+```
+
+Next we identify the top 20 important variables for this model: *num_window* and *roll_belt* appear to be the most important.
+
+```{r}
+varImp(modelFit.rf)
+```
+
+The plot below shows the maximum accuaracy for Predictor 27.
+```{r}
+plot(modelFit.rf)
+```
+
+
+## Prediction
+
+We shall first test our model with the Training Data Set (60%) that this model was trained on.
+Unsurprisingly the **In Sample** accuracy is 100%, with no false-positives or false-negatives.
+
+```{r}
+ModelPred <- predict(modelFit.rf, training) 
+confusionMatrix(ModelPred,training$classe)
+```
+
+Next we test our model with the testing data set (40%) which calculates the **out of Sample** accuracy to be 99.5%
+```{r}
+ModelPred <- predict(modelFit.rf, testing) 
+
+confusionMatrix(ModelPred,testing$classe)
+
+mean(predict(modelFit.rf, testing) == testing$classe) * 100
+```
+
+Finally we shall test the model against the provided Test data set of 20 observations.
+These figures were fed into the Coursera Practical Machine Learning site **Prediction Assignment Submission** and achieved 100% accuracy (20/20). 
+```{r}
+ModelPred <- predict(modelFit.rf, DF2.test) 
+answers <- ModelPred
+print(answers)
+```
+
+## Output Results
+
+We shall use a script provided by the Course Tutor to enable creation of 20 files.
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+```
+
+## Appendix
+
+The following shows the structure of the loaded **Training data set** prior to cleansing.
+```{r}
+str(DF.train)
+
+```
